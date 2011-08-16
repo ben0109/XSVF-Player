@@ -60,14 +60,10 @@ int command_plus()
 	unsigned int size;
 	int i;
 
-	if (sscanf(line_buffer,"+%02x\n",&size)<1) {
-		return 1;
-	}
+	size = fread(buffer, 1, 0x80, xsvf_file);
 
-	size = fread(buffer, 1, size, xsvf_file);
-
-	sprintf(answer, "+%02x\n",size);
-	write(serial_fd, answer, strlen(answer));
+	sprintf(answer, "+%c",size);
+	write(serial_fd, answer, 2);
 
 	for (i=0; i<size; i++) {
 		write(serial_fd, &buffer[i], 1);
@@ -86,22 +82,21 @@ void main()
 
 	xsvf_file = fopen("cram.xsvf","rb");
 
-	char *command = "S\n";
+	char *command = "~";
 	write(serial_fd, command, strlen(command));
 
 	while (1) {
-		if (readLine()) {
-			fprintf(stderr,"error while reading data\n");
-		}
+		char c;
+		read(serial_fd, &c, 1);
 //		printf("got [%s]\n",line_buffer);
-		switch (line_buffer[0]) {
+		switch (c) {
 		case '+':
 			command_plus();
 			break;
-		case 'd': printf("DEBUG  : %s",line_buffer+1); break;
-		case 'i': printf("INFO   : %s",line_buffer+1); break;
-		case 'w': printf("WARNING: %s",line_buffer+1); break;
-		case 'e': printf("ERROR  : %s",line_buffer+1); break;
+		case 'd': readLine(); printf("DEBUG  : %s",line_buffer); break;
+		case 'i': readLine(); printf("INFO   : %s",line_buffer); break;
+		case 'w': readLine(); printf("WARNING: %s",line_buffer); break;
+		case 'e': readLine(); printf("ERROR  : %s",line_buffer); break;
 		case 'f': printf("process failed\n"); return;
 		case 's': printf("process succeeded\n"); return;
 		}

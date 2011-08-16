@@ -7,28 +7,8 @@
 
 #include "states.h"
 #include "ports.h"
-
-/* exsvf instructions */
-#define XCOMPLETE	0
-#define XTDOMASK	1
-#define XSIR		2
-#define XSDR		3
-#define XRUNTEST	4
-#define XREPEAT		7
-#define XSDRSIZE	8
-#define XSDRTDO		9
-#define XSETSDRMASKS	10
-#define XSDRINC		11
-#define XSDRB		12
-#define XSDRC		13
-#define XSDRE		14
-#define XSDRTDOB	15
-#define XSDRTDOC	16
-#define XSDRTDOE	17
-#define XSTATE		18
-
-/* return number of bytes necessary for "num" bits */
-#define BYTES(num) ((int)((num+7)>>3))
+#include "uart.h"
+#include "../common/xsvf.h"
 
 #define MAX_SIZE 0x20
 
@@ -50,13 +30,6 @@ void print_data(uint8_t *data, int size)
 	}
 }
 
-/* clock out the bit onto a particular port */
-void clockOutBit(short p, short val)
-{
-	setPort(p,val); /* change the value of TMS or TDI */
-	pulseClock();	/* set TCK to Low->High->Low */
-}
-
 #define SDR_BEGIN	0x01
 #define SDR_END		0x02
 #define SDR_CHECK	0x10
@@ -68,26 +41,29 @@ void clockOutBit(short p, short val)
 /* output dataVal onto the TDI ports; store the TDO value returned */
 void shift(int flags, uint8_t *data, uint8_t *tdo, uint32_t length)
 {
-	LOG_DEBUG("shifting %d bits, with flags %02x",length,flags);
 	int i,j;
 	int n_bytes = BYTES(length);
+
+	LOG_DEBUG("shifting %d bits, with flags %02x",length,flags);
+
 	for (i=0; i<n_bytes; i++) {
 		uint8_t byte = data[i];
 		uint8_t in = 0;
 		for (j=0;j<8;j++) {
-			/* on the last bit, set TMS to 1 so that we go to the EXIT ?R */
+			/* on the last bit, set TMS to 1 so that we go to the EXIT state */
 			if ((length==1) && (flags&SDR_END)) {
-				setPort(TMS,1);
+				set_port(TMS,1);
+				state_ack(1);
 			}
 
 			if (length>0) {
-				if (tdo != (uint8_t*)0) {
-					/* read the TDO port */
-					in |= readTDOBit()<<j;
+				if (tdo) {
+					in |= read_tdo()<<j;
 				}
-				/* set TDI to last bit */
-				clockOutBit(TDI,(short)(byte & 0x1)); 
+				set_port(TDI, byte&1);
 				byte >>= 1;
+
+				pulse_clock();
 				length--;
 			}
 		}
@@ -101,9 +77,10 @@ int sdr(int flags)
 	uint8_t tdo_actual[MAX_SIZE];
 
 	if (flags&SDR_BEGIN) {
-		clockOutBit(TMS,1); /* Select-DR-Scan state */
-		clockOutBit(TMS,0); /* Capture-DR state */
-		clockOutBit(TMS,0); /* Shift-DR state */
+		state_goto(STATE_SHIFT_DR);
+//		state_step(1); /* Select-DR-Scan state */
+//		state_step(0); /* Capture-DR state */
+//		state_step(0); /* Shift-DR state */
 	}
 
 	/* data processing loop */
@@ -148,19 +125,17 @@ int sdr(int flags)
 				}
 				LOG_WARNING("SDR failed -- trying again (%d left)",repeat-failTimes);
 				/* ISP failed */
-				clockOutBit(TMS,0); /* Pause-DR state */
-				clockOutBit(TMS,1); /* Exit2-DR state */
-				clockOutBit(TMS,0); /* Shift-DR state */
-				clockOutBit(TMS,1); /* Exit1-DR state */
-				clockOutBit(TMS,1); /* Update-DR state */
-				clockOutBit(TMS,0); /* Run-Test/Idle state */
+				state_step(0); /* Pause-DR state */
+				state_step(1); /* Exit2-DR state */
+				state_step(0); /* Shift-DR state */
+				state_step(1); /* Exit1-DR state */
+				state_step(1); /* Update-DR state */
+				state_step(0); /* Run-Test/Idle state */
 
 				/* wait in Run-Test/Idle state */
-				waitTime(run_test);
+				delay(run_test);
 
-				clockOutBit(TMS,1); /* Select-DR-Scan state */
-				clockOutBit(TMS,0); /* Capture-DR state */
-				clockOutBit(TMS,0); /* Shift-DR state */
+				state_goto(STATE_RTI);
 			}
 		} else {
 			/* No TDO check - exit */
@@ -168,17 +143,17 @@ int sdr(int flags)
 		}
 
 	}
-	clockOutBit(TMS,1); /* Update-DR state */
-	clockOutBit(TMS,0); /* Run-Test/Idle state*/
+	if (flags&SDR_END) {
+		state_goto(STATE_RTI);
+	}
 	
-	/* wait in Run-Test/Idle state */
-	waitTime(run_test);
+	delay(run_test);
 	return 0;
 }
 
-#define READ_TDI_VALUE()	readBytes(tdi_value,BYTES(sdr_size))
-#define READ_TDO_EXPECTED()	readBytes(tdo_expected,BYTES(sdr_size))
-#define READ_TDO_MASK()		readBytes(tdo_mask,BYTES(sdr_size))
+#define READ_TDI_VALUE()	read_bytes(tdi_value,BYTES(sdr_size))
+#define READ_TDO_EXPECTED()	read_bytes(tdo_expected,BYTES(sdr_size))
+#define READ_TDO_MASK()		read_bytes(tdo_mask,BYTES(sdr_size))
 
 /* parse the xsvf file and pump the bits */
 int main(void)
@@ -187,14 +162,14 @@ int main(void)
 	uint8_t length; /* hold the length of the arguments to read in */
 
 	ports_init();
+	uart_init();
 
 	LOG_INFO("starting up");
 
-	goto_tlr_state();
 	while (1)
 	{
-		readByte(&inst); /* read 1 byte for the instruction */
-		LOG_DEBUG("instr %02x",inst);
+		read_byte(&inst); /* read 1 byte for the instruction */
+		LOG_DEBUG("instr %02x (state=%x)",inst,current_state);
 		switch (inst) {
 		case XCOMPLETE:
 			/* return */
@@ -211,18 +186,18 @@ int main(void)
 			break;
 
 		case XREPEAT:
-			readByte(&repeat);
+			read_byte(&repeat);
 			LOG_INFO("XREPEAT: %x",repeat);
 			break;
 
 		case XRUNTEST:
-			readLong(&run_test);
+			read_long(&run_test);
 			LOG_INFO("XRUNTEST: %lx",run_test);
 			break;
 
 		case XSIR:
-			readByte(&length);
-			readBytes(tdi_value,BYTES(length));
+			read_byte(&length);
+			read_bytes(tdi_value,BYTES(length));
 
 			LOG_INFO("XSIR:");
 			LOG_INFO("  length: %x",length);
@@ -232,13 +207,13 @@ int main(void)
 			LOG_INFO_END();
 
 			/* send the instruction through the TDI port */
-			clockOutBit(TMS,1); /* Select-DR-Scan state */
-			clockOutBit(TMS,1); /* Select-IR-Scan state */
-			clockOutBit(TMS,0); /* Capture-IR state */
-			clockOutBit(TMS,0); /* Shift-IR state */
+			state_step(1); /* Select-DR-Scan state */
+			state_step(1); /* Select-IR-Scan state */
+			state_step(0); /* Capture-IR state */
+			state_step(0); /* Shift-IR state */
 			shift(SDR_END, tdi_value, 0, length);
-			clockOutBit(TMS,1); /* Update-IR state */
-			clockOutBit(TMS,0); /* Run-Test/Idle state*/
+			state_step(1); /* Update-IR state */
+			state_step(0); /* Run-Test/Idle state*/
 			break;
 
 		case XSDR:
@@ -256,7 +231,7 @@ int main(void)
 			break;
 
 		case XSDRSIZE:
-			readLong(&sdr_size);
+			read_long(&sdr_size);
 			LOG_INFO("XSDRSize: %lx",sdr_size);
 			break;
 
@@ -374,8 +349,8 @@ int main(void)
 			break;
 
 		case XSETSDRMASKS:
-			readBytes(address_mask,BYTES(sdr_size));
-			readBytes(data_mask,BYTES(sdr_size));
+			read_bytes(address_mask,BYTES(sdr_size));
+			read_bytes(data_mask,BYTES(sdr_size));
 
 			LOG_INFO_PRINTF("XSETSDRMASKS:");
 			LOG_INFO_BEGIN();
@@ -395,9 +370,9 @@ int main(void)
 			break;
 
 		case XSTATE:
-			readByte(&inst);
+			read_byte(&inst);
 			LOG_INFO("XSTATE: %x",inst);
-			goto_state(inst);
+			state_goto(inst);
 			break;
 
 		default:
