@@ -14,6 +14,7 @@ void uart_init(void);
 extern int read_byte(uint8_t*);
 extern int read_word(uint16_t*);
 extern int read_long(uint32_t*);
+uint8_t read_next_instr(void);
 
 extern int read_bytes(uint8_t*,int);
 

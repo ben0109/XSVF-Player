@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #include <fcntl.h>
 #include <termios.h>
+#include "../common/xsvf.h"
 
 int serial_fd;
 FILE *xsvf_file;
@@ -16,8 +18,8 @@ int setup_stream(void)
         tio.c_lflag=0;
         tio.c_cc[VMIN]=1;
         tio.c_cc[VTIME]=5;
-        cfsetospeed(&tio,B9600);	// bauds
-	cfsetispeed(&tio,B9600);
+        cfsetospeed(&tio,B57600);	// bauds
+	cfsetispeed(&tio,B57600);
 
 	serial_fd = open("/dev/ttyUSB1", O_RDWR);
 	if (serial_fd==0) {
@@ -25,56 +27,71 @@ int setup_stream(void)
 	}
 
 	tcsetattr(serial_fd,TCSANOW,&tio);
-//	serial_fd = open("to_papilio", O_RDWR);
 	return 0;
 }
 
-void send(char *line)
+void print_line()
 {
-}
-
-char line_buffer[0x100];
-
-int readLine()
-{
-	int n;
-	char c,*ptr;
-	ptr = line_buffer;
+	char c;
 	do {
-		n = read(serial_fd,&c,1);
-		if (n<=0) {
-			return 1;
-		}
+		read(serial_fd,&c,1);
 //		c = fgetc(stdin);
-		*ptr++ = c;
+		printf("%c",c);
 	} while (c!='\n');
-	*ptr++ = 0;
-	return 0;		
 }
 
 int command_plus()
 {
 	static unsigned int total = 0;
-	char answer[0x10];
 	char buffer[0x100];
-	unsigned int size;
-	int i;
+	int size;
 
-	size = fread(buffer, 1, 0x80, xsvf_file);
+	size = load_next_instr(buffer, xsvf_file);
 
-	sprintf(answer, "+%c",size);
-	write(serial_fd, answer, 2);
-
-	for (i=0; i<size; i++) {
-		write(serial_fd, &buffer[i], 1);
-//		usleep(1000);
+	// end of file or XCOMPLETE command => stop
+	if (size==0) {
+		printf("\nreached end of file.\n");
+		exit(2);
 	}
+	if (buffer[0]==0) {
+		printf("\nXCOMPLETE command.\n");
+		return 1;
+	}
+
+	// else send it
+	write(serial_fd, buffer, size);
+
 	total += size;
-	printf("*** sent %02x bytes (total %08x)\n",size,total);
+	printf("\r%08x bytes",total);
+	fflush(stdout);
 	return 0;
 }
 
-void main()
+int data_ready()
+{
+	size_t nbytes;
+        if ( ioctl(serial_fd, FIONREAD, (char*)&nbytes) < 0 )  {
+                fprintf(stderr, "%s - failed to get byte count.\n", __func__);
+                return -1;
+        }
+        return ((int)nbytes);
+
+}
+
+int process_command(char c)
+{
+	switch (c) {
+	case '+': return 1;
+	case '-': printf("process failed\n"); exit(1);
+	case 'd': printf("DEBUG  : "); print_line(); break;
+	case 'i': printf("INFO   : "); print_line(); break;
+	case 'w': printf("WARNING: "); print_line(); break;
+	case 'e': printf("ERROR  : "); print_line(); break;
+	}
+	return 0;
+}
+
+int main()
 {
 	if (setup_stream()) {
 		exit(1);
@@ -82,23 +99,32 @@ void main()
 
 	xsvf_file = fopen("cram.xsvf","rb");
 
-	char *command = "~";
-	write(serial_fd, command, strlen(command));
+	while (1) {
+		int n;
+		char c;
+		while (data_ready()>0) {
+			read(serial_fd, &c, 1);
+			if (process_command(c)>0) {
+				goto sync_ok;
+			}
+		}
+		printf("waiting for sync...\n");
+		usleep(500000);
+		c = 0;
+		write(serial_fd, &c, 1);
+		usleep(500000);
+	}
+sync_ok:
+	printf("sync ok.\n");
 
 	while (1) {
 		char c;
-		read(serial_fd, &c, 1);
-//		printf("got [%s]\n",line_buffer);
-		switch (c) {
-		case '+':
-			command_plus();
+		if (command_plus()) {
 			break;
-		case 'd': readLine(); printf("DEBUG  : %s",line_buffer); break;
-		case 'i': readLine(); printf("INFO   : %s",line_buffer); break;
-		case 'w': readLine(); printf("WARNING: %s",line_buffer); break;
-		case 'e': readLine(); printf("ERROR  : %s",line_buffer); break;
-		case 'f': printf("process failed\n"); return;
-		case 's': printf("process succeeded\n"); return;
 		}
+		do {
+			read(serial_fd, &c, 1);
+		} while (process_command(c)<=0);
 	}
+	return 0;
 }

@@ -1,7 +1,9 @@
 #include "xsvf.h"
+#include "../firmware/uart.h"
 
-uint32_t sdr_size;
+int sdr_bytes;
 
+//#define READ(m) for (i=0;i<m;i++) { buffer[n++] = uart_getchar(); }
 #define READ(m) for (i=0;i<m;i++) { buffer[n++] = fgetc(stream); }
 
 int load_next_instr(uint8_t *buffer, FILE *stream)
@@ -10,10 +12,9 @@ int load_next_instr(uint8_t *buffer, FILE *stream)
 
 	n = 0;
 	READ(1);
-
 	switch (buffer[0]) {
 	case XTDOMASK:
-		READ(sdr_size);
+		READ(sdr_bytes);
 		break;
 	case XREPEAT:
 		READ(1);
@@ -23,48 +24,46 @@ int load_next_instr(uint8_t *buffer, FILE *stream)
 		break;
 	case XSIR:
 		READ(1);
-		READ(BYTES(buffer[1]));
+		READ(buffer[1]>>3);;
 		break;
 	case XSDR:
-		READ(sdr_size);
+		READ(sdr_bytes);
 		break;
 	case XSDRSIZE:
 		READ(4);
-		sdr_size = 0;
-		sdr_size |= (buffer[1])<<24;
-		sdr_size |= (buffer[2])<<16;
-		sdr_size |= (buffer[3])<<8;
-		sdr_size |= (buffer[4])<<0;
-		sdr_size = BYTES(sdr_size);
+		sdr_bytes = 0;
+		sdr_bytes |= (buffer[3])<<8;
+		sdr_bytes |= (buffer[4]);
+		sdr_bytes = (sdr_bytes+7)>>3;
 		break;
 	case XSDRTDO:
-		READ(sdr_size);
-		READ(sdr_size);
+		READ(sdr_bytes);
+		READ(sdr_bytes);
 		break;
 	case XSDRB:
-		READ(sdr_size);
+		READ(sdr_bytes);
 		break;
 	case XSDRC:
-		READ(sdr_size);
+		READ(sdr_bytes);
 		break;
 	case XSDRE:
-		READ(sdr_size);
+		READ(sdr_bytes);
 		break;
 	case XSDRTDOB:
-		READ(sdr_size);
-		READ(sdr_size);
+		READ(sdr_bytes);
+		READ(sdr_bytes);
 		break;
 	case XSDRTDOC:
-		READ(sdr_size);
-		READ(sdr_size);
+		READ(sdr_bytes);
+		READ(sdr_bytes);
 		break;
 	case XSDRTDOE:
-		READ(sdr_size);
-		READ(sdr_size);
+		READ(sdr_bytes);
+		READ(sdr_bytes);
 		break;
 	case XSETSDRMASKS:
-		READ(sdr_size);
-		READ(sdr_size);
+		READ(sdr_bytes);
+		READ(sdr_bytes);
 		break;
 	case XCOMPLETE:
 		break;
@@ -72,10 +71,13 @@ int load_next_instr(uint8_t *buffer, FILE *stream)
 		READ(1);
 		break;
 
+	/* pseudo instr to sync */
+	case PING:
+		break;
+
 	case XSDRINC:
 	default:
 		return -1;
 	}
-
 	return n;
 }

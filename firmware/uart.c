@@ -3,10 +3,11 @@
 /********************************************************/
 
 #define F_CPU 16000000UL	// 16 MHz
-#define UART_BAUD 9600		// baudrate
+#define UART_BAUD 57600	// baudrate
 
 #include <avr/io.h>
 #include "uart.h"
+#include "../common/xsvf.h"
 
 unsigned char buffer[0x100];
 int buffer_pos;
@@ -27,9 +28,6 @@ void uart_init(void)
 
 	uart = &uart_str;
 
-	// wait for sync signal
-	while (fgetc(uart)!='~') ;
-
 	buffer_pos = 0;
 	buffer_size = 0;
 }
@@ -43,10 +41,23 @@ void uart_putchar(char c)
 char uart_getchar(void)
 {
 	loop_until_bit_is_set(USR, RXC);
+//	LOG_DEBUG("%02x",UDR);
 	return UDR;
 }
 
-
+uint8_t read_next_instr()
+{
+	int n = 0;
+	LOG_DEBUG("requesting next instruction");
+	uart_putchar('+');
+	while (n<=0) {
+		n = load_next_instr(buffer, uart);
+	}
+	LOG_DEBUG("received %d bytes",n);
+	buffer_pos = 1;
+	buffer_size = n;
+	return buffer[0];
+}
 
 void fail(void)
 {

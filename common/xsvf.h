@@ -1,6 +1,7 @@
 #ifndef __xsvf_dot_h
 #define __xsvf_dot_h
 
+#include <stdio.h>
 #include <inttypes.h>
 
 /* xsvf instructions */

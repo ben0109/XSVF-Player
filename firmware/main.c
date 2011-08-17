@@ -78,9 +78,6 @@ int sdr(int flags)
 
 	if (flags&SDR_BEGIN) {
 		state_goto(STATE_SHIFT_DR);
-//		state_step(1); /* Select-DR-Scan state */
-//		state_step(0); /* Capture-DR state */
-//		state_step(0); /* Shift-DR state */
 	}
 
 	/* data processing loop */
@@ -129,13 +126,10 @@ int sdr(int flags)
 				state_step(1); /* Exit2-DR state */
 				state_step(0); /* Shift-DR state */
 				state_step(1); /* Exit1-DR state */
-				state_step(1); /* Update-DR state */
-				state_step(0); /* Run-Test/Idle state */
-
-				/* wait in Run-Test/Idle state */
-				delay(run_test);
 
 				state_goto(STATE_RTI);
+				delay(run_test);
+				state_goto(STATE_SHIFT_DR);
 			}
 		} else {
 			/* No TDO check - exit */
@@ -168,14 +162,14 @@ int main(void)
 
 	while (1)
 	{
-		read_byte(&inst); /* read 1 byte for the instruction */
+		inst = read_next_instr();
+//		read_byte(&inst);
 		LOG_DEBUG("instr %02x (state=%x)",inst,current_state);
+
 		switch (inst) {
 		case XCOMPLETE:
-			/* return */
 			LOG_INFO("XCOMPLETE: ");
-			success();
-			return 1;
+			break;
 
 		case XTDOMASK:
 			READ_TDO_MASK();
@@ -206,14 +200,9 @@ int main(void)
 			print_data(tdi_value,BYTES(length));
 			LOG_INFO_END();
 
-			/* send the instruction through the TDI port */
-			state_step(1); /* Select-DR-Scan state */
-			state_step(1); /* Select-IR-Scan state */
-			state_step(0); /* Capture-IR state */
-			state_step(0); /* Shift-IR state */
+			state_goto(STATE_SHIFT_IR);
 			shift(SDR_END, tdi_value, 0, length);
-			state_step(1); /* Update-IR state */
-			state_step(0); /* Run-Test/Idle state*/
+			state_goto(STATE_RTI);
 			break;
 
 		case XSDR:

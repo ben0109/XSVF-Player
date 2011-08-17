@@ -38,17 +38,19 @@ void pulse_clock()
 {
 	set_port(TCK,0);
 	set_port(TCK,1);
+	_delay_us(1000);
 	#ifdef DEBUG_MODE
-		LOG_DEBUG("M=%d I=%d",(out_word&TMS)?1:0,(out_word&TDI)?1:0);
+//		LOG_DEBUG("M=%d I=%d",(out_word&TMS)?1:0,(out_word&TDI)?1:0);
 	#endif
 	set_port(TCK,0);
 }
 
 int read_tdo()
 {
+//	_delay_us(1000);
 	in_word = (uint8_t)PINA;
 	#ifdef DEBUG_MODE
-		LOG_DEBUG("O=%d",(in_word&TDO)?1:0);
+//		LOG_DEBUG("O=%d",(in_word&TDO)?1:0);
 	#endif
 	return (in_word&TDO)?1:0;
 }

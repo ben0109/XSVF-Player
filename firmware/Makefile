@@ -16,10 +16,11 @@ OBJCOPY=avr-objcopy
 CFLAGS=-g -mmcu=$(MCU) -Wall -Wstrict-prototypes -Os -mcall-prologues
 
 # needed objects
-OBJECTS=main.o ports.o states.o uart.o
+OBJECTS=main.o ports.o states.o uart.o ../common/xsvf.o
+#OBJECTS=check_client.o ../common/xsvf.o
 
 # output level
-CFLAGS:=$(CFLAGS) -D LOG_LEVEL=3 -D DEBUG_MODE
+CFLAGS:=$(CFLAGS) -D LOG_LEVEL=2 -D DEBUG_MODE
 
 load: avr.bit
 	sudo $(BUTTERFLYPROG) -v -f avr.bit
@@ -38,9 +39,9 @@ avr_progmem.hex : avr_progmem.out
 avr_progmem.out : $(OBJECTS)
 	$(CC) $(CFLAGS) -o avr_progmem.out -Wl,-Map,avr_progmem.map $^
 %.o : %.c 
-	$(CC) $(CFLAGS) -Os -c $<
+	$(CC) $(CFLAGS) -Os -c $< -o $@
 %.o : %.S
-	$(CC) $(CFLAGS) -Os -c $<
+	$(CC) $(CFLAGS) -Os -c $< -o $@
 
 .phony: clean
 
