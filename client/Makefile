@@ -1,11 +1,9 @@
-CC=gcc
-OBJCOPY=avr-objcopy
+CC = gcc
 
 client: client.c ../common/xsvf.c ../common/xsvf.h
 	$(CC) -o $@ $^
 
-
-.phony: clean
+.PHONY: clean
 
 clean:
 	rm -f client
