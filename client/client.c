@@ -90,17 +90,31 @@ int process_command(char c, int serial_fd)
 	return 0;
 }
 
-int main()
+int main(int argc, char **argv)
 {
+	char *devname;
+	char *xsvfname;
 	int serial_fd;
 	FILE *xsvf_file;
 
-	serial_fd = setup_stream("/dev(ttyUSB1");
+	if (argc != 3) {
+		fprintf(stderr, "Usage: %s serial-device xsvf-file\n", argv[0]);
+		exit(1);
+	}
+	devname = argv[1];
+	xsvfname = argv[2];
+
+	serial_fd = setup_stream(devname);
 	if (serial_fd < 0) {
+		perror(devname);
 		exit(1);
 	}
 
-	xsvf_file = fopen("cram.xsvf","rb");
+	xsvf_file = fopen(xsvfname, "rb");
+	if (!xsvf_file) {
+		perror(xsvfname);
+		exit(1);
+	}
 
 	while (1) {
 		int n;
