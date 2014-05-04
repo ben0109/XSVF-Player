@@ -67,7 +67,8 @@ void shift(int flags, uint8_t *data, uint8_t *tdo, uint32_t length)
 				length--;
 			}
 		}
-		tdo[i] = in;
+		if (tdo)
+			tdo[i] = in;
 	}
 }
 
