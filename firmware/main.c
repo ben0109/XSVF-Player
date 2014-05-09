@@ -56,6 +56,7 @@ void shift(int flags, uint8_t *data, uint8_t *tdo, uint32_t length)
 				state_ack(1);
 			}
 
+			/* Note: TDO valid TDOV ns after falling edge of TCK */
 			if (length>0) {
 				if (tdo) {
 					in |= read_tdo()<<j;

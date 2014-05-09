@@ -29,8 +29,13 @@ void set_port(uint8_t p,int val)
 {
 	out_word = set_bit(out_word, p, val);
 
+	/* Update port on falling edge of TCK */
 	if (p==TCK) {
-		PORTA = out_word;
+		if (val==0) {
+			PORTA = out_word;
+		} else {
+			PORTA |= TCK;
+		}
 	}
 }
 
